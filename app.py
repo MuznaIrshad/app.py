@@ -1,54 +1,94 @@
-import tkinter as tk
-from tkinter import messagebox
+# Imports
+import streamlit as st 
 import pandas as pd
 import os
+from io import BytesIO
 
-# File to store attendance data
-FILE_NAME = "attendance.xlsx"
 
-def save_attendance():
-    name = name_entry.get()
-    roll = roll_entry.get()
-    status = status_var.get()
-    
-    if not name or not roll or status not in ["Present", "Absent"]:
-        messagebox.showerror("Error", "Please enter all fields correctly!")
-        return
-    
-    # Check if file exists
-    if os.path.exists(FILE_NAME):
-        df = pd.read_excel(FILE_NAME)
-    else:
-        df = pd.DataFrame(columns=["Name", "Roll Number", "Status"])
-    
-    # Append new data
-    new_data = pd.DataFrame([[name, roll, status]], columns=["Name", "Roll Number", "Status"])
-    df = pd.concat([df, new_data], ignore_index=True)
-    
-    # Save to Excel
-    df.to_excel(FILE_NAME, index=False)
-    messagebox.showinfo("Success", "Attendance marked successfully!")
-    name_entry.delete(0, tk.END)
-    roll_entry.delete(0, tk.END)
+# Set up our App
+st.set_page_config(page_title="Data converter", layout='wide')
+st.title("Data converter")
+st.write("Transform your files betwween CSV and Excel formats with build-in data cleaning and visualization")
 
-# GUI Setup
-root = tk.Tk()
-root.title("Attendance App")
-root.geometry("300x250")
+uploaded_files = st.file_uploader("Upload your files (CSV or Excel):", type=["csv","xlsx"], accept_multiple_files=True)
 
-tk.Label(root, text="Name:").pack()
-name_entry = tk.Entry(root)
-name_entry.pack()
+if uploaded_files:
+    for file in uploaded_files:
+        file_ext = os.path.splitext(file.name)[-1].lower()
 
-tk.Label(root, text="Roll Number:").pack()
-roll_entry = tk.Entry(root)
-roll_entry.pack()
 
-status_var = tk.StringVar()
-tk.Label(root, text="Status:").pack()
-tk.Radiobutton(root, text="Present", variable=status_var, value="Present").pack()
-tk.Radiobutton(root, text="Absent", variable=status_var, value="Absent").pack()
+        if file_ext == ".csv":
+            df = pd.read_csv(file)
+        elif file_ext == ".xlsx":
+                df = pd.read_excel(file)
+        else: 
+            st.error(f"Unsupported file type: {file_ext}")
+            continue
 
-tk.Button(root, text="Save Attendance", command=save_attendance).pack()
+        # Display info about the file
+        st.write(f"**File Name:** {file.name}")
+        st.write(f"**File Size:** {file.size/1024}")
 
-root.mainloop()
+        # Show 5 rows of our df
+        st.write("Preview the Head of the Dataframe")
+        st.dataframe(df.head())
+
+        # Options for data cleaning
+        st.subheader("Data Cleaning Options")
+        if st.checkbox(f"Clean Data for {file.name}"):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                if st.button(f"Remove Duplicates from {file.name}"):
+                    df.drop_duplicates(inplace=True)
+                    st.write("Duplicates Removed!")
+
+            with col2:
+                if st.button(f"Fill Missing Values for {file.name}"):
+                    numeric_cols = df.select_dtypes(include=['numbers']). colums
+                    df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].mean())
+                    st.write("Missing Values have been Filled!")  
+                    
+
+                    # Choose Specific Columns to keep or Convert
+                    st.subheader("Select Columns to Convert")
+                    columns = st.multiselect(f"Choose Columns for {file.name}", df.columns, default=df.columns)
+                    df = [columns]
+
+
+                    # Create Some Visualization 
+                    st.subheader("Data Visualization")
+                    if st.checkbox(f"Show Visualization for {file.name}"):
+                        st.bar_chart(df.select_dtypes(include='number').iloc[:,:2])
+
+
+                    # Convert the file -> CSV or Excel
+                    st.subheader("Conversion Options")
+                    conversion_type = st.radio(f"Convert {file.name} to:",["CSV","Excel"], key=file.name)
+                    if st.button(f"Convert {file.name}"):
+                       buffer = BytesIO()
+                       if conversion_type == "CSV":
+                         df.to_csv(buffer,index=False)
+                         file.name = file.name.replace(file_ext, ".csv")
+                         mime_type = "text/csv"
+
+                    elif conversion_type == "Excel":
+                        df.to_excel(buffer, index=False)
+                        file.name = file.name.replace(file.ext, ".xlsx")
+                        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    buffer.seek(0)
+
+
+                    # Download Button
+                    st.download_button(
+                        label=f"Download {file.name} as {conversion_type}",
+                        data=buffer,
+                        mime=mime_type
+                    )
+
+
+st.success("All files processed!")                    
+
+
+
+                    
